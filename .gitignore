@@ -1,0 +1,8 @@
+# TLS certificates and keys
+cert.pem
+key.pem
+cert.conf
+
+# optional future
+*.pem
+*.key
