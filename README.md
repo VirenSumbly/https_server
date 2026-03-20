@@ -75,3 +75,41 @@ Example:
 https://192.168.0.5:8443
 ```
 You may need to accept a security warning since the certificate is self-signed.
+
+## Updates (v1.1)
+
+This version focuses on stabilizing and securing the server before adding advanced features.
+
+### Fixes & Improvements
+
+- Implemented safe path handling to prevent directory traversal (`../`) attacks
+- Removed global state for folder rendering (preparing for future concurrency support)
+- Added proper 404 handling for missing files
+- Improved request handling with larger buffer size
+- Added MIME type detection for correct file serving
+  - Images now render correctly in browser
+  - Supports multiple file types (png, jpg, txt, etc.)
+- Improved error handling for file access and directory reading
+- Cleaned routing logic for `/browse` and `/file`
+
+### Current Capabilities
+
+- HTTPS server using TLS (self-signed certificate)
+- Recursive folder browsing
+- Static file serving from vault directory
+- Works across devices (laptop + mobile)
+- Correct handling of binary and text files
+
+### Known Limitations
+
+- Markdown files are currently rendered as plain text
+- Obsidian-specific syntax (`![[...]]`, `[[...]]`) is not yet supported
+- No file editing or write functionality
+- Single-threaded (no concurrent client handling yet)
+
+### Next Steps
+
+- Markdown rendering support
+- Obsidian-style embed and link parsing
+- Multi-threaded request handling
+- JSON API for programmatic access

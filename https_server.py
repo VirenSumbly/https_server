@@ -6,6 +6,8 @@ import socket
 import ssl
 import os
 from urllib.parse import unquote
+import mimetypes
+import markdown
 
 # Define socket host and port
 SERVER_HOST = '0.0.0.0'
@@ -24,9 +26,25 @@ server_socket.listen(2)#no. of clients
 print('Listening on port %s ...' % SERVER_PORT)
 
 secure_server = context.wrap_socket(server_socket,server_side=True)
-def render_folder(subpath=""):
-    full_path = os.path.join(VAULT_DIR, subpath)
+def safe_path(base, user_path):
+    full_path = os.path.normpath(os.path.join(base, user_path))
 
+    base_abs = os.path.abspath(base)
+    full_abs = os.path.abspath(full_path)
+
+    if not full_abs.startswith(base_abs):
+        return None
+
+    return full_abs
+
+
+def render_folder(subpath=""):
+    full_path = safe_path(VAULT_DIR, subpath)
+
+    if not full_path or not os.path.exists(full_path):
+        return "<h1>Access Denied</h1>"
+
+    title = subpath if subpath else "Index"
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -46,19 +64,20 @@ def render_folder(subpath=""):
     </style>
     </head>
     <body>
-    <h1>{folder}</h1>
+    <h1>{title}</h1>
     <ul>
     """
+    try:
+        for item in os.listdir(full_path):
+            item_path = os.path.join(full_path, item)
+            new_path = os.path.join(subpath, item).replace("\\", "/")
 
-    for item in os.listdir(full_path):
-        item_path = os.path.join(full_path, item)
-        new_path = os.path.join(subpath, item).replace("\\", "/")
-
-        if os.path.isdir(item_path):
-            html += f'<li><a href="/browse/{new_path}">{item}</a></li>'
-        else:
-            html += f'<li><a href="/file/{new_path}">{item}</a></li>'
-
+            if os.path.isdir(item_path):
+                html += f'<li><a href="/browse/{new_path}">{item}</a></li>'
+            else:
+                html += f'<li><a href="/file/{new_path}">{item}</a></li>'
+    except Exception:
+        return "<h1>Error reading directory</h1>"
     html += "</ul></body></html>"
 
     return html
@@ -71,7 +90,7 @@ while True:
         print(f"client connected: {client_address}")
         
         # Get the client request
-        request = client_connection.recv(1024)
+        request = client_connection.recv(8192)
         req_str = request.decode('utf-8',errors='ignore')
         print(req_str)
 
@@ -82,9 +101,8 @@ while True:
             continue
 
         filename = headers[0].split()[1]
-        
+        #/
         if filename == "/" or filename == "/browse/" or filename == "/browse":
-            folder = "Index"
             html = render_folder("")
             response = (
                 b"HTTP/1.0 200 OK\r\n"
@@ -97,6 +115,7 @@ while True:
             continue
 
         
+        #browse
         if filename.startswith("/browse/"):
             folder = filename[len("/browse/"):]
             folder = unquote(folder)
@@ -111,57 +130,108 @@ while True:
             client_connection.sendall(response)
             client_connection.close()
             continue
-
+        
+        
+        #files
         if filename.startswith("/file/"):
-            file_path = filename[len("/file/"):]
-            file_path = unquote(file_path)
-            full_path = os.path.join(VAULT_DIR, file_path)
+            file_path = unquote(filename[len("/file/"):])
+            full_path = safe_path(VAULT_DIR, file_path)
 
-            with open(full_path, "rb") as f:
-                content = f.read()
+            if not full_path or not os.path.exists(full_path):
+                response = (
+                    b"HTTP/1.0 404 Not Found\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"\r\n"
+                    b"<h1>404 Not Found</h1>"
+                )
+                client_connection.sendall(response)
+                client_connection.close()
+                continue
 
-            html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-            body {{
-                font-family: sans-serif;
-                font-size: 20px;
-                white-space: pre-wrap;
-            }}
-            </style>
-            </head>
-            <body>
-            {content.decode(errors="ignore")}
-            </body>
-            </html>
-            """
+            try:
+                with open(full_path, "rb") as f:
+                    content = f.read()
+                if full_path.endswith(".md"):
+                    html_body = markdown.markdown(content.decode(errors="ignore"))
+                    html_body = html_body.replace('src="', 'src="/file/')
+                    html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                    body {{
+                        font-family: sans-serif;
+                        max-width: 800px;
+                        margin: auto;
+                        padding: 20px;
+                        line-height: 1.6;
+                    }}
+                    img {{
+                        max-width: 100%;
+                    }}
+                    </style>
+                    </head>
+                    <body>
+                    {html_body}
+                    </body>
+                    </html>
+                    """
+
+                    response = (
+                        b"HTTP/1.0 200 OK\r\n"
+                        b"Content-Type: text/html\r\n"
+                        b"\r\n" +
+                        html.encode()
+                    )
+
+                    client_connection.sendall(response)
+                    client_connection.close()
+                    continue
+            except Exception:
+                response = (
+                    b"HTTP/1.0 500 Internal Server Error\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"\r\n"
+                    b"<h1>Error reading file</h1>"
+                )
+                client_connection.sendall(response)
+                client_connection.close()
+                continue
+
+            # MIME type detection
+            mime_type, _ = mimetypes.guess_type(full_path)
+            if mime_type is None:
+                mime_type = "application/octet-stream"
 
             response = (
-                b"HTTP/1.0 200 OK\r\n"
-                b"Content-Type: text/html\r\n"
+                b"HTTP/1.0 200 OK\r\n" +
+                f"Content-Type: {mime_type}\r\n".encode() +
                 b"\r\n" +
-                html.encode()
+                content
             )
 
             client_connection.sendall(response)
             client_connection.close()
             continue
-                    
-        
-        
-        
-        #Send HTTP response
+
+        # 🔹 Unknown route
+        response = (
+            b"HTTP/1.0 404 Not Found\r\n"
+            b"Content-Type: text/html\r\n"
+            b"\r\n"
+            b"<h1>Route Not Found</h1>"
+        )
         client_connection.sendall(response)
         client_connection.close()
+
     except ssl.SSLError as e:
-        print("Handshake failed (normal for self-signed cert):", e)
+        print("Handshake failed:", e)
         continue
 
     except Exception as e:
         print("Other error:", e)
         continue
-# Close socket
+
+
 secure_server.close()
