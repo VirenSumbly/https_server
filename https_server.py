@@ -8,6 +8,7 @@ import os
 from urllib.parse import unquote
 import mimetypes
 import markdown
+import re
 
 # Define socket host and port
 SERVER_HOST = '0.0.0.0'
@@ -36,6 +37,56 @@ def safe_path(base, user_path):
         return None
 
     return full_abs
+
+def resolve_link(filename,current_dir):
+    candidate = os.path.join(current_dir,filename)
+    candidate_md = candidate + ".md"
+    full_path = os.path.join(VAULT_DIR,candidate_md)
+    
+
+    
+    if os.path.exists(full_path):
+        return candidate_md.replace("\\","/")
+    
+    #fallback
+    for root,dirs,files in os.walk(VAULT_DIR):
+        for f in files:
+            if f == filename or f.startswith(filename + ".md"):
+                rel_path = os.path.relpath(os.path.join(root,filename),VAULT_DIR)
+                return rel_path.replace("\\","/")
+    
+    return None
+
+
+def parse_obsidian_embeds(md_text):
+    def repl(match):
+        filename = match.group(1)
+
+        # 👇 only treat images
+        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+            path = f"Assets Tags Templates/Assets/{filename}"
+            return f'<img src="/file/{path}">'
+
+        # 👇 if not image, leave unchanged
+        return match.group(0)
+
+    return re.sub(r'!\[\[([^\]]+)\]\]', repl, md_text)
+
+def parse_obsidian_links(md_text,current_dir):
+    def repl(match):
+        filename = match.group(1)
+
+        # path = filename  # keep simple for now
+        # print(path)
+        path = resolve_link(filename, current_dir)
+        
+        if path:
+            return f'<a href="/file/{path}">{filename}</a>'
+        else:
+            return filename
+
+    return re.sub(r'(?<!\!)\[\[([^\]]+)\]\]', repl, md_text)
+
 
 
 def render_folder(subpath=""):
@@ -152,8 +203,32 @@ while True:
                 with open(full_path, "rb") as f:
                     content = f.read()
                 if full_path.endswith(".md"):
-                    html_body = markdown.markdown(content.decode(errors="ignore"))
-                    html_body = html_body.replace('src="', 'src="/file/')
+                    current_dir = os.path.dirname(file_path)
+                    md_text = content.decode(errors="ignore")
+                    
+                    md_text = parse_obsidian_embeds(md_text)
+                    md_text = parse_obsidian_links(md_text,current_dir)
+                    
+                    
+                    html_body = markdown.markdown(md_text)
+                    
+                    #html_body = markdown.markdown(content.decode(errors="ignore"))
+                    # html_body = html_body.replace('src="', 'src="/file/')
+                    
+                    
+                    
+                    
+
+
+                                        
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
                     html = f"""
                     <!DOCTYPE html>
                     <html>
