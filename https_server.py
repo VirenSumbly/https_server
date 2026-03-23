@@ -5,7 +5,7 @@
 import socket
 import ssl
 import os
-from urllib.parse import unquote
+from urllib.parse import unquote,unquote_plus
 import mimetypes
 import markdown
 import re
@@ -150,10 +150,11 @@ while True:
         if len(headers) == 0 or len(headers[0].split()) < 2:
             client_connection.close()
             continue
-
+        
+        method = headers[0].split()[0]
         filename = headers[0].split()[1]
         #/
-        if filename == "/" or filename == "/browse/" or filename == "/browse":
+        if method == "GET" and (filename == "/" or filename == "/browse/" or filename == "/browse"):
             html = render_folder("")
             response = (
                 b"HTTP/1.0 200 OK\r\n"
@@ -167,7 +168,7 @@ while True:
 
         
         #browse
-        if filename.startswith("/browse/"):
+        elif method == "GET" and filename.startswith("/browse/"):
             folder = filename[len("/browse/"):]
             folder = unquote(folder)
             html = render_folder(folder)
@@ -184,9 +185,11 @@ while True:
         
         
         #files
-        if filename.startswith("/file/"):
+        elif method == "GET" and filename.startswith("/file/"):
             file_path = unquote(filename[len("/file/"):])
             full_path = safe_path(VAULT_DIR, file_path)
+            print(file_path)
+            print(full_path)
 
             if not full_path or not os.path.exists(full_path):
                 response = (
@@ -202,6 +205,7 @@ while True:
             try:
                 with open(full_path, "rb") as f:
                     content = f.read()
+                #markdown handle
                 if full_path.endswith(".md"):
                     current_dir = os.path.dirname(file_path)
                     md_text = content.decode(errors="ignore")
@@ -213,21 +217,20 @@ while True:
                     html_body = markdown.markdown(md_text)
                     
                     #html_body = markdown.markdown(content.decode(errors="ignore"))
-                    # html_body = html_body.replace('src="', 'src="/file/')
+                    # html_body = html_body.replace('src="', 'src="/file/')             
                     
-                    
-                    
-                    
-
-
-                                        
-                    
-                    
-                    
-                    
-                    
-                    
-                    
+                    # def Write():
+                    #     print("hello")
+                    #     #get the file, have an input box in the html at the end
+                    #     # have an button that takes all the characters in the input box and does a post. 
+                    #     # i think i have to first just break/ continue and give the filename
+                    #     # saveObj = {
+                    #     #     "html_Body" : html_body,
+                            
+                            
+                    #     # }
+                    #     full_path +="/save"
+                    #     continue 
                     
                     html = f"""
                     <!DOCTYPE html>
@@ -246,9 +249,11 @@ while True:
                         max-width: 100%;
                     }}
                     </style>
+                   
                     </head>
                     <body>
                     {html_body}
+                    <a href="/save/{file_path}">Write</a>
                     </body>
                     </html>
                     """
@@ -263,6 +268,31 @@ while True:
                     client_connection.sendall(response)
                     client_connection.close()
                     continue
+                #mimetype code    
+                else:
+                                
+                    # MIME type detection
+                    mime_type, _ = mimetypes.guess_type(full_path)
+                    if mime_type is None:
+                        mime_type = "application/octet-stream"
+
+                    response = (
+                        b"HTTP/1.0 200 OK\r\n" +
+                        f"Content-Type: {mime_type}\r\n".encode() +
+                        b"\r\n" +
+                        content
+                    )
+
+                    client_connection.sendall(response)
+                    client_connection.close()
+                    continue
+                        
+        
+                
+            
+            
+            
+            
             except Exception:
                 response = (
                     b"HTTP/1.0 500 Internal Server Error\r\n"
@@ -273,25 +303,155 @@ while True:
                 client_connection.sendall(response)
                 client_connection.close()
                 continue
+            
+                # /save
+        #save
+        elif method == "GET" and filename.startswith("/save/"):
+            print("hello")
 
-            # MIME type detection
-            mime_type, _ = mimetypes.guess_type(full_path)
-            if mime_type is None:
-                mime_type = "application/octet-stream"
+            file_path = filename[len("/save/"):]
+            file_path = unquote(file_path)
+            print("GET PATH:", repr(file_path))
+            full_path = safe_path(VAULT_DIR, file_path)
 
+            if not full_path or not os.path.exists(full_path):
+                response = (
+                    b"HTTP/1.0 404 Not Found\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"\r\n"
+                    b"<h1>404 Not Found</h1>"
+                )
+                client_connection.sendall(response)
+                client_connection.close()
+                continue
+
+            try:
+                with open(full_path, "rb") as f:
+                    content = f.read()
+
+                if full_path.endswith(".md"):
+                    current_dir = os.path.dirname(file_path)
+                    md_text = content.decode(errors="ignore")
+
+                    md_text = parse_obsidian_embeds(md_text)
+                    md_text = parse_obsidian_links(md_text, current_dir)
+
+                    html_body = markdown.markdown(md_text)
+
+                    html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                    body {{
+                        font-family: sans-serif;
+                        max-width: 800px;
+                        margin: auto;
+                        padding: 20px;
+                        line-height: 1.6;
+                    }}
+                    img {{
+                        max-width: 100%;
+                    }}
+                    textarea {{
+                        width: 100%;
+                        height: 200px;
+                        margin-top: 20px;
+                    }}
+                    </style>
+                    <script>
+                        txt = document.getElememtById("journal-box")
+                    </script>
+                    </head>
+                    <body>
+                    {html_body}
+                    <form method="POST" action="/save">
+                        <textarea name="content"></textarea>
+                        <input type="hidden" name="path" value="{file_path}">
+                        <button type="submit">Save</button>
+                    </form>
+                    </body>
+                    </html>
+                    """
+
+                    response = (
+                        b"HTTP/1.0 200 OK\r\n"
+                        b"Content-Type: text/html\r\n"
+                        b"\r\n" +
+                        html.encode()
+                    )
+
+                    client_connection.sendall(response)
+                    client_connection.close()
+                    continue
+
+            except Exception:
+                response = (
+                    b"HTTP/1.0 500 Internal Server Error\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"\r\n"
+                    b"<h1>Error reading file</h1>"
+                )
+                client_connection.sendall(response)
+                client_connection.close()
+                continue
+                      
+        elif method == "POST" and filename =="/save":
+            print("POST")
+            #request = client_connection.recv(8192)
+            
+            headers_part, body = request.split(b"\r\n\r\n",1)
+            
+            body_str = body.decode()
+            
+            pairs = body_str.split("&")
+            data = {}
+            for pair in pairs:
+                if "=" in pair:
+                    key,value = pair.split("=",1)
+                    data[key] = unquote_plus(value)
+                
+            content = data.get("content","").strip()
+            
+            path  = data.get("path","")
+            print("POST PATH:", repr(path))
+            
+            absPath = safe_path(VAULT_DIR,path)
+            
+            if not absPath or not os.path.exists(absPath):
+                response =(
+                    b"HTTP/1.0 500 Internal Server Error\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"\r\n"
+                    b"<h1>Error File Not Found</h1>"
+                )
+                client_connection.sendall(response)
+                client_connection.close()
+                continue
+                
+                
+            
+            with open(absPath,'a',encoding="utf-8") as myFile:
+                myFile.write("\n"+content)
+            
             response = (
-                b"HTTP/1.0 200 OK\r\n" +
-                f"Content-Type: {mime_type}\r\n".encode() +
-                b"\r\n" +
-                content
+                b"HTTP/1.0 200 OK\r\n"
+                b"Content-Type: text/html\r\n"
+                b"\r\n"
+                b"<h1>Saved</h1>"
             )
-
+            
             client_connection.sendall(response)
             client_connection.close()
             continue
-
+            
+            
+            
+        
         # 🔹 Unknown route
-        response = (
+        else:
+            response = (
             b"HTTP/1.0 404 Not Found\r\n"
             b"Content-Type: text/html\r\n"
             b"\r\n"
