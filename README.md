@@ -180,3 +180,58 @@ View notes on mobile
 Edit notes remotely
 Sync changes directly to local vault via HTTPS
 No heavy frameworks or external dependencies
+
+## Updates (v1.4)
+
+This version completes the transition from a basic append-only editor to a more complete file management system.
+
+### Full File Editing
+
+* Added `/overwrite` route with a dedicated editing view
+* Users can now open a file in a full-screen editor and overwrite its contents
+* Implemented proper separation of GET (editor UI) and POST (file write) for safer operations
+* Fixed HTML injection issues by escaping content before rendering inside `<textarea>`
+
+### New File Creation
+
+* Added `/newfile` route to create new markdown files directly from the browser
+* Automatically appends `.md` extension if omitted
+* Redirects to the overwrite editor after creation for immediate editing
+* Prevents overwriting existing files
+
+### Improved Request Handling
+
+* Implemented robust POST body parsing using `Content-Length`
+* Added support for large form submissions (full file edits)
+* Switched to `parse_qs` for correct handling of URL-encoded data
+
+### File Safety Enhancements
+
+* Prevented accidental writes to directories
+* Enforced file validation before overwrite operations
+* Strengthened path safety using `safe_path`
+
+### UI Improvements
+
+* Introduced full-screen editing interface for overwrite mode
+* Added centered editor layout and improved usability
+* Enabled inline file creation UI in leaf folders
+
+---
+
+### Editing Modes
+
+The system now supports two editing workflows:
+
+* **Append Mode (`/save`)** → Quick journaling / incremental updates
+* **Overwrite Mode (`/overwrite`)** → Full document editing
+
+---
+
+### Next Steps
+
+* File versioning / history system
+* Multi-device sync (core Owl goal)
+* Background sync and change detection
+* Basic authentication / access control
+* Refactoring into modular architecture
